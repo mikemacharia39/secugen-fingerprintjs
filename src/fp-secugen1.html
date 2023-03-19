@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>SecuGen HSDU03P Fingerprint Reader Example</title>
+  </head>
+  <body>
+    <h1>SecuGen HSDU03P Fingerprint Reader Example</h1>
+    <p>
+      <button id="connectButton">Connect Fingerprint Reader</button>
+    </p>
+    <p>
+      <button id="captureButton">Capture Fingerprint</button>
+    </p>
+    <div id="imageContainer"></div>
+    <script>
+      // Import the USBDevice library
+      const navigatorUSB = navigator.usb;
+
+      // Define the vendor and product IDs for the SecuGen HSDU03P fingerprint reader
+      const vendorId = 0x1162;
+      const productId = 0x0001;
+
+      // Define the endpoint for the fingerprint data
+      const endpointIn = 1;
+
+      // Define the endpoint for the LED control data
+      const endpointOut = 2;
+
+      // Define the buffer size for the fingerprint data
+      const bufferSize = 512;
+
+      // Define a variable to hold the device object
+      let device;
+
+      // Define a function to handle the connection of the fingerprint reader
+      async function connectFingerprintReader() {
+        navigator.usb.requestDevice({ filters: [{ vendorId: 0x1162}] })
+        .then(device => {
+            console.log('Device found: ' + device.productName);
+
+            // Open the device
+            return device.open()
+            .then(() => device.selectConfiguration(1))
+            .then(() => device.claimInterface(0))
+            .then(() => device.controlTransferOut({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: 17, // SET_REPORT
+                value: 0x200,
+                index: 0x00
+            }))
+            .then(() => {
+                // Send command to capture a fingerprint
+                const command = new Uint8Array([0x01, 0x00, 0x00, 0x00]);
+                return device.controlTransferOut({
+                    requestType: 'vendor',
+                    recipient: 'device',
+                    request: 17, // SET_REPORT
+                    value: 0x200,
+                    index: 0x00,
+                    data: command
+                });
+            })
+            // .then(() => {
+            //     // Receive the captured fingerprint image
+            //     const request = {
+            //         requestType: 'vendor',
+            //         recipient: 'device',
+            //         request: 17, // SET_REPORT
+            //         value: 0x301,
+            //         index: 0x00
+            //     };
+            //     const length = 1024;
+            //     return device.controlTransferIn(request, length);
+            // })
+            // .then(result => {
+            //     // Convert the image data to a downloadable file
+            //     const blob = new Blob([new Uint8Array(result.data.buffer)], { type: 'image/bmp' });
+            //     const url = URL.createObjectURL(blob);
+
+            //     // Create a link element and simulate a click to download the file
+            //     const link = document.createElement('a');
+            //     link.href = url;
+            //     link.download = 'fingerprint.bmp';
+            //     link.click();
+            // });
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+      }
+
+    // Define a function to handle the LED control
+    async function controlLed() {
+        try {
+            // Define the LED control command (turn LED On)
+            const command = new Uint8Array([0x1, 0x1]);
+
+            // Create a transfer object for the LED control data
+            const transfer = await device.transferOut(endpointOut, command);
+
+            // Show a message that the LED is On
+            alert('LED is On');
+        } catch (error) {
+            // Show an error message if the LED control failed
+            alert(`Error: ${error.message}`);
+        }
+    }
+
+      // Define a function to handle the capture of the fingerprint
+      async function captureFingerprint() {
+        try {
+            // Request permission to access the USB device
+          device = await navigatorUSB.requestDevice({
+            filters: [{vendorId}]
+          });
+
+          // Open the device and select the configuration
+          await device.open();
+          await device.selectConfiguration(1);
+
+          // Claim the interface for the fingerprint data
+          const interfaceNumber = 0;
+          await device.claimInterface(interfaceNumber);
+
+          controlLed();
+
+          // Create a transfer object for the fingerprint data
+          const transfer = await device.transferIn(2, 669184);
+
+          // Read the fingerprint data from the transfer object
+          const data = transfer.data;
+
+          // Save the fingerprint data as a PNG image
+          const imageBlob = new Blob([data], { type: 'image/png' });
+          const imageUrl = URL.createObjectURL(imageBlob);
+          const image = new Image();
+          image.src = imageUrl;
+          saveImage(image)
+          document.getElementById('imageContainer').appendChild(image);
+        } catch (error) {
+          // Show an error message if the fingerprint could not be captured
+          alert(`Error: ${error.message}`);
+        }
+      }
+
+      function saveImage(myImage) {
+        // Get the image element
+        const image = myImage;
+
+        // Create a canvas element
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+
+        // Get the canvas context
+        const ctx = canvas.getContext('2d');
+
+        // Draw the image on the canvas
+        ctx.drawImage(image, 0, 0);
+
+        // Convert the canvas data to a data URL
+        const dataURL = canvas.toDataURL('image/png');
+
+        // Create a link element
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = 'myImage.png';
+
+        // Add the link element to the page
+        document.body.appendChild(link);
+
+        // Click the link to start the download
+        link.click();
+
+        // Remove the link from the page
+        document.body.removeChild(link);
+    }
+
+
+      // Attach event listeners to the connect and capture buttons
+      document.getElementById('connectButton').addEventListener('click', connectFingerprintReader);
+      document.getElementById('captureButton').addEventListener('click', captureFingerprint);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>SecuGen HSDU03P Fingerprint Reader Example</title>
+  </head>
+  <body>
+    <h1>SecuGen HSDU03P Fingerprint Reader Example</h1>
+    <p>
+        Ensure to click on 'Connect Fingerprint Reader' to establish connection with fingerprint reader first then<br/>
+        click on 'Turn LED ON Button' to turn on the secugen LED on
+    </p>
+    <p>
+      <button id="connectButton">Connect Fingerprint Reader</button>
+    </p>
+    <p>
+      <button id="ledControlButton">Turn LED ON Button</button>
+    </p>
+    <p>
+    <button id="ledOff">Turn LED OFF Button</button>
+    </p>
+    <div id="imageContainer"></div>
+    <script>
+        // Define the vendor and product IDs for the SecuGen HSDU03P fingerprint reader
+        const vendorId = 0x1162;
+        const productId = 0x0001;
+
+        // Define the endpoint for the LED control data
+        const endpointOut = 2;
+
+        // Define the request type, recipient, and request codes for the control transfer
+        const requestType = 'vendor';
+        const recipient = 'device';
+        const request = 17;
+        const value = 0x01;
+
+        // Define a variable to hold the device object
+        let device;
+
+        // Define a function to handle the connection of the fingerprint reader
+        async function connectFingerprintReader() {
+            try {
+                // Request permission to access the USB device
+                device = await navigator.usb.requestDevice({
+                filters: [{ vendorId }]
+                });
+
+                // Open the device and select the configuration
+                await device.open();
+                await device.selectConfiguration(1);
+
+                // Claim the interface for the control transfer
+                const interfaceNumber = 0;
+                await device.claimInterface(interfaceNumber);
+
+                // Enable the LED button
+                document.getElementById('ledControlButton').disabled = false;
+
+                // Show a message that the device is connected
+                const message = `Fingerprint reader ${device.productName} is connected`;
+                alert(message);
+            } catch (error) {
+                // Show an error message if the device could not be connected
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Define a function to handle the LED button click
+        async function toggleLED() {
+            try {
+                // Send a control transfer to turn on the LED
+                const result = await device.controlTransferOut({
+                requestType,
+                recipient,
+                request,
+                value,
+                index: 0
+                });
+
+                // Show a message that the LED is on
+                const message = `LED is on`;
+                alert(message);
+            } catch (error) {
+                // Show an error message if the LED could not be turned on
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function toggleLedOff() {
+            try {
+                const result = await device.controlTransferOut({
+                    requestType,
+                    recipient,
+                    request,
+                    value: 0x00,
+                    index: 0
+                });
+
+                // Show a message that the LED is off
+                alert('LED is off');
+            } catch (error) {
+                // Show an error message if the command could not be sent
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Attach event listeners to the connect and LED buttons
+        document.getElementById('connectButton').addEventListener('click', connectFingerprintReader);
+        document.getElementById('ledControlButton').addEventListener('click', toggleLED);
+        document.getElementById('ledOff').addEventListener('click', toggleLedOff);
+    </script>
+  </body>
+</html>
