@@ -62,29 +62,29 @@
                     data: command
                 });
             })
-            // .then(() => {
-            //     // Receive the captured fingerprint image
-            //     const request = {
-            //         requestType: 'vendor',
-            //         recipient: 'device',
-            //         request: 17, // SET_REPORT
-            //         value: 0x301,
-            //         index: 0x00
-            //     };
-            //     const length = 1024;
-            //     return device.controlTransferIn(request, length);
-            // })
-            // .then(result => {
-            //     // Convert the image data to a downloadable file
-            //     const blob = new Blob([new Uint8Array(result.data.buffer)], { type: 'image/bmp' });
-            //     const url = URL.createObjectURL(blob);
+            .then(() => {
+                // Receive the captured fingerprint image
+                const request = {
+                    requestType: 'vendor',
+                    recipient: 'device',
+                    request: 17, // SET_REPORT
+                    value: 0x301,
+                    index: 0x00
+                };
+                const length = 1024;
+                return device.controlTransferIn(request, length);
+            })
+            .then(result => {
+                // Convert the image data to a downloadable file
+                const blob = new Blob([new Uint8Array(result.data.buffer)], { type: 'image/bmp' });
+                const url = URL.createObjectURL(blob);
 
-            //     // Create a link element and simulate a click to download the file
-            //     const link = document.createElement('a');
-            //     link.href = url;
-            //     link.download = 'fingerprint.bmp';
-            //     link.click();
-            // });
+                // Create a link element and simulate a click to download the file
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'fingerprint.bmp';
+                link.click();
+            });
         })
         .catch(error => {
             console.error('Error:', error);
