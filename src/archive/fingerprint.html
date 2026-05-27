@@ -1,0 +1,347 @@
+<html>
+<head>
+    <title>Test</title>
+<body>
+
+<p>This is an (unsuccessful) attempt to capture a fingerprint scan from a SecuGen HU20 fingerprint scanner via
+WebUSB.</p>
+
+<div>
+<button id="scan">Scan</button>
+</div>
+
+<canvas id="fingerprint" width="300" height="400">
+
+</canvas>
+
+<script>
+
+    var canvasEl = document.getElementById('fingerprint');
+
+    let device;
+
+    /**
+     * Request 37 seems to query the device for readiness, or perhaps make and model information.
+     * The result is 30 bytes that does not change over the course of several invocations.
+     */
+    function pollStatus() {
+        device
+            .controlTransferIn({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: 37,
+                value: 0,
+                index: 0
+            }, 30)
+            .then(result => {
+                var status = result.data.getUint8(0);
+                console.log('status: ', status.toString(16));
+            });
+    }
+
+    /**
+     * This sequence of two commands was observed frequently: it seems to set some kind of
+     * options. First a control transfer out is made to set the value, and then a control
+     * transfer in to confirm the value.
+     */
+    function setParam(index, value) {
+        const data = new Int8Array(1);
+        data[0] = value;
+
+        console.log("Setting param " + index + " to 0x" + value.toString(16));
+
+        return device
+            .controlTransferOut({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: 34,
+                value: 0x37,
+                index: index,
+            }, data)
+            .then(() => {
+                // Now check that this value was actually set
+                return device.controlTransferIn({
+                    requestType: 'vendor',
+                    recipient: 'device',
+                    request: 34,
+                    value: 0x37,
+                    index: index
+                }, 1)
+            })
+            .then(result => {
+                const newParamValue = result.data.getUint8(0);
+                console.log('Param ' + index + ' set to ' + newParamValue.toString(16));
+            })
+    }
+
+    /**
+     * Some kind of "flush" command?
+     */
+    function control5() {
+        return device
+            .controlTransferOut({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: 5,
+                value: 0x1,
+                index: 0x0,
+            });
+    }
+
+    function in8() {
+        return device
+            .controlTransferIn({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: 8,
+                value: 0x0,
+                index: 0x2000,
+            }, 2)
+            .then(result => {
+                console.log('in8 = ' + result.data.getUint8(0).toString(16) + ' ' +
+                    result.data.getUint8(1).toString(16));
+            });
+    }
+    function controlQuad(req, b1, b2, b3, b4) {
+
+        const data = new Int8Array(4);
+        data[0] = b1;
+        data[1] = b2;
+        data[2] = b3;
+        data[3] = b4;
+
+        return device
+            .controlTransferOut({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: req,
+                value: 0x0,
+                index: 0x0,
+            }, data);
+    }
+
+    function control(req) {
+        return device
+            .controlTransferOut({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: req,
+                value: 0x0,
+                index: 0x0,
+            });
+    }
+
+
+    function control17() {
+        return device
+            .controlTransferOut({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: 17,
+                value: 0x1,
+                index: 0x0,
+            });
+    }
+
+
+    /**
+     * Reads in image data of some kind. The size of the data is too large for 300px * 400px * 8bit (~120k) so
+     * it may be several frames.
+     */
+    function captureFrame(canv) {
+        return device
+            .transferIn(2, 669184)
+            .then((result) => {
+                console.log("frame bytes = " + result.data.byteLength);
+                if(canv) {
+                    var ctx = canv.getContext('2d');
+                    var imageData = ctx.createImageData(300, 400);
+                    for(var i=0; i<(300*400);++i) {
+                        var px = result.data.getUint8(i);
+                        imageData.data[(i*4)+0] = px;
+                        imageData.data[(i*4)+1] = px;
+                        imageData.data[(i*4)+2] = px;
+                        imageData.data[(i*4)+3] = 255;
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                }
+            })
+    }
+
+    /**
+     * Not clear what this does, but reads in four bytes.
+     */
+    function in22() {
+        return device
+            .controlTransferIn({
+                requestType: 'vendor',
+                recipient: 'device',
+                request: 22,
+                value: 0x0,
+                index: 0x2000,
+            }, 4)
+            .then(result => {
+                console.log('in22 = ' +
+                    result.data.getUint8(0).toString(16) + ' ' +
+                    result.data.getUint8(1).toString(16) + ' ' +
+                    result.data.getUint8(2).toString(16) + ' ' +
+                    result.data.getUint8(3).toString(16));
+            });
+    }
+
+    /**
+     * The following sequence is based on a capture of a finger print scan via USBPcap, at least
+     * up to the second bulk transfer in of image data, after which I got tired of translating wireshark
+     * packets into JavaScript.
+     *
+     * There appears to be an initialization phase where scores of parameters are set that probably
+     * control brightness, image format, etc? followed by an initial bulk transfer in of some kind of data,
+     * then the led light is turned on, and there is a second incoming bulk transfer.
+     */
+    function scan() {
+
+        navigator.usb.requestDevice({filters: [{vendorId: 0x1162}]})
+            .then(selectedDevice => {
+                console.log(selectedDevice.usbVersionMajor);
+                console.log(selectedDevice.usbVersionMinor);
+                console.log(selectedDevice.usbVersionSubminor);
+                console.log(selectedDevice.deviceClass);
+                console.log(selectedDevice.deviceSubclass);
+                console.log(selectedDevice.deviceProtocol);
+                console.log(selectedDevice.vendorId);
+                console.log(selectedDevice.productId);
+                console.log(selectedDevice.productName);
+                console.log(selectedDevice.serialNumber);
+                console.log(selectedDevice.manufacturerName);
+                console.log(selectedDevice.opened);
+                device = selectedDevice;
+                return device.open(); // Begin a session
+            })
+            .then(() => device.selectConfiguration(1))
+            .then(() => {
+                return device.claimInterface(0)
+            })
+            .then(() => pollStatus())
+            .then(() => pollStatus())
+            .then(() => pollStatus())
+            .then(() => setParam(0x03, 0x2))
+            .then(() => setParam(0x04, 0x81))
+            .then(() => setParam(0x05, 0x0a))
+            .then(() => setParam(0x08, 0x00))
+            .then(() => setParam(0x09, 0x11))
+            .then(() => setParam(0x0a, 0x11))
+            .then(() => setParam(0x10, 0x11))
+            .then(() => setParam(0x11, 0x23))
+            .then(() => setParam(0x12, 0x85))
+            .then(() => setParam(0x13, 0x00))
+            .then(() => setParam(0x14, 0x27))
+            .then(() => setParam(0x16, 0xb6))
+            .then(() => setParam(0x30, 0x01))
+            .then(() => setParam(0x31, 0xc0))
+            .then(() => setParam(0x32, 0x08))
+            .then(() => setParam(0x41, 0x00))
+            .then(() => setParam(0x42, 0x00))
+            .then(() => setParam(0x43, 0x06))
+            .then(() => setParam(0x44, 0x43))
+            .then(() => setParam(0x45, 0x00))
+            .then(() => setParam(0x46, 0x00))
+            .then(() => setParam(0x47, 0x04))
+            .then(() => setParam(0x48, 0xb3))
+            .then(() => setParam(0x49, 0x00))
+            .then(() => setParam(0x4a, 0x20))
+            .then(() => setParam(0x4b, 0x00))
+            .then(() => setParam(0x4c, 0x00))
+            .then(() => setParam(0x4d, 0x00))
+            .then(() => setParam(0x4e, 0x00))
+            .then(() => setParam(0x60, 0x0b))
+            .then(() => setParam(0x61, 0x16))
+            .then(() => setParam(0x62, 0x32))
+            .then(() => setParam(0x63, 0x80))
+            .then(() => setParam(0x71, 0x08))
+            .then(() => setParam(0x80, 0xf8))
+            .then(() => setParam(0x81, 0x06))
+            .then(() => setParam(0x90, 0xaa))
+            .then(() => setParam(0x91, 0x08))
+            .then(() => setParam(0x92, 0x10))
+            .then(() => setParam(0x93, 0x40))
+            .then(() => setParam(0x94, 0x04))
+            .then(() => setParam(0x95, 0x01))
+            .then(() => setParam(0x96, 0x02))
+            .then(() => setParam(0x97, 0x80))
+            .then(() => setParam(0x98, 0x10))
+            .then(() => setParam(0x99, 0x08))
+            .then(() => setParam(0x9a, 0x03))
+            .then(() => setParam(0x9b, 0xb0))
+            .then(() => setParam(0x9c, 0x08))
+            .then(() => setParam(0x9d, 0x24))
+            .then(() => setParam(0x93, 0x30))
+            .then(() => setParam(0xb7, 0x15))
+            .then(() => setParam(0xb8, 0x28))
+            .then(() => setParam(0xb9, 0x04))
+            .then(() => setParam(0x03, 0x05))
+            .then(() => setParam(0xa5, 0x00))
+            .then(() => setParam(0xa6, 0x00))
+            .then(() => setParam(0xa7, 0x00))
+            .then(() => setParam(0xa8, 0x00))
+            .then(() => setParam(0x41, 0x00))
+            .then(() => setParam(0x42, 0xfa))
+            .then(() => setParam(0x43, 0x0a))
+            .then(() => setParam(0x44, 0x4f))
+            .then(() => setParam(0x45, 0x00))
+            .then(() => setParam(0x46, 0x28))
+            .then(() => setParam(0x47, 0x03))
+            .then(() => setParam(0x48, 0x23))
+            .then(() => control5())
+            .then(() => in8())
+            .then(() => setParam(0x41, 0x01))
+            .then(() => setParam(0x42, 0x4c))
+            .then(() => setParam(0x43, 0x03))
+            .then(() => setParam(0x44, 0xc7))
+            .then(() => setParam(0x45, 0x00))
+            .then(() => setParam(0x46, 0xac))
+            .then(() => setParam(0x47, 0x02))
+            .then(() => setParam(0x48, 0xb9))
+            .then(() => control5())
+            .then(() => controlQuad(64, 0x3, 0xe8, 0x00, 0x00))
+            .then(() => control5())
+            .then(() => control(1))
+            .then(() => captureFrame())
+
+            .then(() => control(2))
+            .then(() => controlQuad(65, 0x00, 0x00, 0x00, 0x00))
+            .then(() => controlQuad(64, 0x05, 0x82, 0x00, 0x00))
+            .then(() => controlQuad(65, 0x00, 0x00, 0x00, 0x00))
+            .then(() => setParam(0x30, 0x05))
+            .then(() => setParam(0x31, 0x82))
+            .then(() => setParam(0x32, 0x00))
+            .then(() => control17())
+            .then(() => in22())
+            .then(() => in22())
+            .then(() => control17())
+            .then(() => controlQuad(65, 0x00, 0x00, 0x00, 0x00))
+            .then(() => controlQuad(64, 0x05, 0x82, 0x00, 0x00))
+            .then(() => control5())
+            .then(() => control(1))
+            .then(() => captureFrame(canvasEl))
+
+            .then(() => control(2))
+            .then(() => in22())
+            .then(() => control17())
+            .then(() => control17())
+            .then(() => control17())
+            .then(() => pollStatus())
+            .then(() => setParam(0x3, 0x02))
+            .then(() => setParam(0x4, 0x81))
+            .then(() => setParam(0x05, 0x0a))
+
+    }
+
+    document.getElementById('scan').addEventListener('click', function (e) {
+        scan();
+
+    });
+
+</script>
+
+</body>
+</html>

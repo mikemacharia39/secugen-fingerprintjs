@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>SecuGen HSDU03P Fingerprint Reader Example</title>
+  </head>
+  <body>
+    <h1>SecuGen HSDU03P Fingerprint Reader Example</h1>
+    <p>
+        Ensure to click on 'Connect Fingerprint Reader' to establish connection with fingerprint reader first then<br/>
+        click on 'Turn LED ON Button' to turn on the secugen LED on
+    </p>
+    <p>
+      <button id="connectButton">Connect Fingerprint Reader</button>
+    </p>
+    <p>
+      <button id="ledControlButton" disabled>Turn LED ON Button</button>
+    </p>
+    <p>
+      <button id="ledOff" disabled>Turn LED OFF Button</button>
+    </p>
+    <div id="imageContainer"></div>
+    <script>
+        // Define the vendor and product IDs for the SecuGen HSDU03P fingerprint reader
+        const vendorId = 0x1162;
+        const productId = 0x0001;
+
+        // Define the endpoint for the LED control data
+        const endpointOut = 2;
+
+        // Define the request type, recipient, and request codes for the control transfer
+        const requestType = 'vendor';
+        const recipient = 'device';
+        const request = 17;
+        const value = 0x01;
+
+        // Define a variable to hold the device object
+        let device;
+
+        // Define a function to handle the connection of the fingerprint reader
+        async function connectFingerprintReader() {
+            try {
+                device = await navigator.usb.requestDevice({ filters: [{ vendorId }] });
+                await device.open();
+                console.log(device.configurations); // List all configurations
+                await device.selectConfiguration(1); // Make sure this is the correct configuration index
+                const configuration = device.configurations[0];
+                const interfaceNumber = configuration.interfaces[0].interfaceNumber; // Use the correct interface number
+                console.log(configuration.interfaces); // List all interfaces
+                await device.claimInterface(interfaceNumber);
+                document.getElementById('ledControlButton').disabled = false;
+                document.getElementById('ledOff').disabled = false;
+                alert(`Fingerprint reader ${device.productName} is connected`);
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function toggleLED() {
+            try {
+                const result = await device.controlTransferOut({
+                    requestType,
+                    recipient,
+                    request,
+                    value,
+                    index: 0
+                });
+                alert(`LED is on`);
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        async function toggleLedOff() {
+            try {
+                const result = await device.controlTransferOut({
+                    requestType,
+                    recipient,
+                    request,
+                    value: 0x00,
+                    index: 0
+                });
+                alert('LED is off');
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Attach event listeners to the connect and LED buttons
+        document.getElementById('connectButton').addEventListener('click', connectFingerprintReader);
+        document.getElementById('ledControlButton').addEventListener('click', toggleLED);
+        document.getElementById('ledOff').addEventListener('click', toggleLedOff);
+    </script>
+  </body>
+</html>
